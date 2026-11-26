@@ -1,0 +1,25 @@
+[package]
+name = "cpan-overlay"
+version = "0.1.0"
+edition = "2024"
+description = "CPAN overlay server"
+repository = "https://github.com/uperl/cpan-overlay"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.104"
+
+
+[package.metadata.deb]
+maintainer = "Nobody <devnull@wdlabs.com>"
+copyright = "Nobody"
+extended-description = """\
+CPAN overlay server"""
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/cpan-overlay", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/cpan-overlay/README.md", "644"],
+    ["LICENSE", "usr/share/doc/cpan-overlay/LICENSE", "644"],
+]
+
