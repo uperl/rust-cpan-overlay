@@ -51,6 +51,11 @@ generation can be reselected to roll back.
 Logical backend names in the manifest are Fastly backend names (HTTP) or
 KV store names (`kv` backends name their store explicitly).
 
+KV Store backends are **best effort, patches welcome**. They are implemented
+and tested under Viceroy, but can't be tested on Fastly itself (KV Stores need a
+paid account). For hosted deployments, prefer an HTTP backend, such as GitHub
+release assets with `"delivery": "redirect"`.
+
 ## Development
 
 ```sh

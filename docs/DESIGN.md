@@ -82,7 +82,7 @@ Package names use the `cpan-overlay*` prefix; the repository keeps the `rust-` p
 | Runtime | Rust/Wasm | Same Compute artifact | Native Rust binary |
 | Configuration | Config Store | Emulated Config Store | Local JSON/TOML |
 | Secret material | Secret Store | Local test secret fixture | Secret file/environment |
-| Artifact backends | HTTP, KV | HTTP, emulated KV | HTTP, filesystem |
+| Artifact backends | HTTP, KV (best effort) | HTTP, emulated KV | HTTP, filesystem |
 | Cache | Fastly cache | Emulator-supported facilities | Memory/disk |
 | TLS | Managed edge TLS | Local test configuration | Reverse proxy or native TLS |
 | Logging | Configured log endpoints | Local logs | Structured stdout/stderr |
@@ -198,7 +198,7 @@ Local configuration supports JSON and optionally TOML mapped to the same typed s
 ### 6.1 Backend interface
 
 - HTTP: public CPAN mirrors, GitHub release assets, generic HTTP repositories, S3-compatible HTTP origins and other overlays. Authenticated HTTP/object-storage access may require signing or adapter-specific credentials; do not assume arbitrary private S3 buckets work with an unsigned GET.
-- KV: artifact retrieval via named linked store and object key; verify current Fastly size and resource limits.
+- KV: artifact retrieval via named linked store and object key; verify current Fastly size and resource limits. KV support is **best effort, patches welcome**: it is implemented and tested under Viceroy, but the maintainer cannot test it on Fastly (KV Stores need a paid account). HTTP backends are the primary, tested artifact path for hosted deployments.
 - Filesystem: native local artifact directories.
 
 Backends implement metadata lookup and byte streaming where possible. An HTTP backend may support redirects; KV and filesystem normally serve bytes directly. Artifact names are independent of storage location. Do not expose internal storage URLs, keys, credentials or presigned URLs in the public provenance API by default.
