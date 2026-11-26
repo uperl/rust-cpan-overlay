@@ -1,20 +1,100 @@
 name: Release
 
+# On a push to main that changes [workspace.package].version in Cargo.toml:
+# build the Fastly Compute package, then tag v<version> and create a GitHub
+# release carrying it. The tag and release are only created once the build
+# has succeeded. Deployment to a Fastly service is a separate, explicit step
+# (`fastly compute deploy`); nothing here touches a Fastly account.
+
 on:
   push:
     branches: [main]
 
-
 concurrency: release-${{ github.ref }}
-
 
 permissions:
   contents: write
 
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned so release artifacts are reproducible; bump deliberately.
+  FASTLY_CLI_VERSION: "17.2.0"
 
 jobs:
-  release:
-    uses: uperl/action-rust-release-bin/.github/workflows/release.yml@v1
-    with:
-      publisher: "uperl"
+  check-version:
+    name: Check version bump
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
+      - id: check
+        run: |
+          workspace_version() {
+            awk '
+              /^\[workspace\.package\]/ { p = 1; next }
+              /^\[/                     { p = 0 }
+              p && /^version[[:space:]]*=/ {
+                sub(/^version[[:space:]]*=[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit
+              }' "$1"
+          }
+          NEW="$(workspace_version Cargo.toml)"
+          OLD=""
+          if git cat-file -e HEAD~1:Cargo.toml 2>/dev/null; then
+            git show HEAD~1:Cargo.toml > "$RUNNER_TEMP/old-Cargo.toml"
+            OLD="$(workspace_version "$RUNNER_TEMP/old-Cargo.toml")"
+          fi
+          echo "version: '$OLD' -> '$NEW'"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          if [ -n "$NEW" ] && [ "$NEW" != "$OLD" ] && ! git ls-remote --exit-code --tags origin "refs/tags/v$NEW" >/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Build and release
+    needs: check-version
+    if: needs.check-version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.check-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Test
+        run: cargo test --locked --workspace
+
+      - name: Install Fastly CLI
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/fastly.tar.gz" \
+            "https://github.com/fastly/cli/releases/download/v${FASTLY_CLI_VERSION}/fastly_v${FASTLY_CLI_VERSION}_linux-amd64.tar.gz"
+          tar -C "$RUNNER_TEMP" -xzf "$RUNNER_TEMP/fastly.tar.gz" fastly
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Build Compute package
+        run: |
+          fastly version
+          fastly compute build --non-interactive
+          mkdir dist
+          cp pkg/cpan-overlay.tar.gz "dist/cpan-overlay-compute-v${VERSION}.tar.gz"
+          cp bin/main.wasm "dist/cpan-overlay-compute-v${VERSION}.wasm"
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Tag and create release
+        run: |
+          gh release create "v${VERSION}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v${VERSION}" \
+            --generate-notes

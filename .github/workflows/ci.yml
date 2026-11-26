@@ -1,4 +1,3 @@
-
 name: CI
 
 on:
@@ -13,7 +12,22 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   ci:
     uses: uperl/action-rust-ci/.github/workflows/ci.yml@v1
 
+  compute:
+    name: compute (wasm32-wasip1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --target wasm32-wasip1 -p cpan-overlay-compute -- -D warnings
+      - run: cargo build --locked --release --target wasm32-wasip1 -p cpan-overlay-compute

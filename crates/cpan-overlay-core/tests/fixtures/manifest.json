@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "site": {
+    "title": "Personal CPAN Overlay",
+    "description": "Personal Perl distributions and curated patches",
+    "public_url": "https://cpan.example.com"
+  },
+  "authentication": {"mode": "none"},
+  "upstream": {"backend": "cpan"},
+  "backends": {
+    "cpan": {"type": "http", "base_url": "https://cpan.metacpan.org", "delivery": "proxy"},
+    "github": {"type": "http", "base_url": "https://github.com", "delivery": "redirect"},
+    "local-kv": {"type": "kv", "store": "distributions"}
+  },
+  "distributions": [
+    {
+      "name": "Foo-Bar",
+      "kind": "patched",
+      "version": "1.24.1",
+      "path": "L/LO/LOCAL/Foo-Bar-1.24.1.tar.gz",
+      "backend": "github",
+      "object": "example/foo/releases/download/v1.24.1/Foo-Bar-1.24.1.tar.gz",
+      "provides": {"Foo::Bar": "1.24.1", "Foo::Bar::Util": "1.24.1"},
+      "removes": ["Foo::Bar::Legacy"],
+      "upstream": {"path": "A/AU/AUTHOR/Foo-Bar-1.24.tar.gz", "version": "1.24"},
+      "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+      "size": 1234,
+      "patches": [
+        {"summary": "Fix Perl 5.42 compatibility", "issue_url": "https://github.com/example/foo/issues/42", "patch_url": "https://github.com/example/foo/commit/abc123.patch"}
+      ],
+      "source": {"repository": "https://github.com/example/foo", "revision": "abc123"}
+    },
+    {
+      "name": "Personal-Tools",
+      "kind": "personal",
+      "version": "0.01",
+      "path": "L/LO/LOCAL/Personal-Tools-0.01.tar.gz",
+      "backend": "local-kv",
+      "object": "Personal-Tools-0.01.tar.gz",
+      "provides": {"Personal::Tools": "0.01"},
+      "sha256": "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9",
+      "md5": "37b51d194a7513e45b56f6524f2d51f2",
+      "mtime": "2026-11-26"
+    }
+  ]
+}

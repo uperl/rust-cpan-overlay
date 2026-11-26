@@ -1,0 +1,16 @@
+{
+   "abstract" : "Example personal distribution served by CPAN Overlay",
+   "author" : ["Graham Ollis <plicease@cpan.org>"],
+   "dynamic_config" : 0,
+   "generated_by" : "hand",
+   "license" : ["mit"],
+   "meta-spec" : {"url" : "https://metacpan.org/pod/CPAN::Meta::Spec", "version" : 2},
+   "name" : "Personal-Tools",
+   "prereqs" : {
+      "configure" : {"requires" : {"ExtUtils::MakeMaker" : "0"}},
+      "test" : {"requires" : {"Test::More" : "0"}}
+   },
+   "provides" : {"Personal::Tools" : {"file" : "lib/Personal/Tools.pm", "version" : "0.01"}},
+   "release_status" : "stable",
+   "version" : "0.01"
+}

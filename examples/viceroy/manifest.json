@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "site": {
+    "title": "Example CPAN Overlay",
+    "description": "Local Viceroy example: one personal and one patched distribution",
+    "public_url": "http://127.0.0.1:7676"
+  },
+  "upstream": {"backend": "cpan", "refresh_seconds": 300},
+  "backends": {
+    "cpan": {"type": "http", "base_url": "https://cpan.metacpan.org", "delivery": "proxy"},
+    "local-kv": {"type": "kv", "store": "distributions"}
+  },
+  "distributions": [
+    {
+      "name": "File-Which",
+      "kind": "patched",
+      "version": "1.2701",
+      "path": "L/LO/LOCAL/File-Which-1.2701.tar.gz",
+      "backend": "local-kv",
+      "object": "File-Which-1.2701.tar.gz",
+      "provides": {"File::Which": "1.2701"},
+      "upstream": {"path": "P/PL/PLICEASE/File-Which-1.27.tar.gz", "version": "1.27"},
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "mtime": "2026-11-26",
+      "patches": [{"summary": "Example patch: version bump only"}],
+      "source": {"repository": "https://github.com/uperl/File-Which"}
+    },
+    {
+      "name": "Personal-Tools",
+      "kind": "personal",
+      "version": "0.01",
+      "path": "L/LO/LOCAL/Personal-Tools-0.01.tar.gz",
+      "backend": "local-kv",
+      "object": "Personal-Tools-0.01.tar.gz",
+      "provides": {"Personal::Tools": "0.01"},
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "mtime": "2026-11-26"
+    }
+  ]
+}
