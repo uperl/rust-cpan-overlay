@@ -1,0 +1,34 @@
+# Fastly Compute package for CPAN Overlay.
+#
+# Local:  examples/viceroy/prepare.sh && fastly compute serve
+# Deploy: fastly compute deploy    (the service, its "cpan" backend, Config
+#         Store "cpan_overlay" and any KV stores must exist and be linked)
+
+manifest_version = 3
+name = "cpan-overlay"
+description = "CPAN Overlay on Fastly Compute"
+authors = ["Graham Ollis <plicease@cpan.org>"]
+language = "other"
+
+[scripts]
+build = "cargo build --locked --release --target wasm32-wasip1 -p cpan-overlay-compute && mkdir -p bin && cp target/wasm32-wasip1/release/cpan-overlay-compute.wasm bin/main.wasm"
+
+[local_server]
+
+  [local_server.backends]
+
+    [local_server.backends.cpan]
+      url = "https://cpan.metacpan.org"
+      override_host = "cpan.metacpan.org"
+
+  [local_server.config_stores]
+
+    [local_server.config_stores.cpan_overlay]
+      file = "examples/viceroy/config-store.json"
+      format = "json"
+
+  [local_server.kv_stores]
+
+    [local_server.kv_stores.distributions]
+      file = "examples/viceroy/kv-store.json"
+      format = "json"

@@ -1,8 +1,9 @@
 # CPAN Overlay — Design Document
 
-**Project:** `cpan-overlay`  
-**Proposed repository:** `uperl/cpan-overlay`  
-**Status:** Draft / proposed architecture  
+**Project:** `cpan-overlay` (crates `cpan-overlay-*`)  
+**Repository:** `uperl/rust-cpan-overlay`  
+**License:** MIT  
+**Status:** Draft architecture; Compute MVP in progress  
 **Date:** 2026-11-26
 
 ## 1. Overview
@@ -57,29 +58,22 @@ flowchart TD
 
 The core is independent of the transport runtime. Runtime adapters supply configuration, storage, upstream HTTP, caching, clock, logging, and request/response translation. Avoid native-only dependencies in the core and avoid leaking Fastly SDK types into public core interfaces. Choose synchronous/asynchronous boundaries after verifying SDK constraints; do not require Tokio in the Wasm target.
 
-### 3.1 Proposed repository layout
+### 3.1 Repository layout
 
 ```text
-cpan-overlay/
-  Cargo.toml
+rust-cpan-overlay/
+  Cargo.toml                 workspace; shared version in [workspace.package]
   crates/
-    cpan-overlay-core/
-    cpan-overlay-compute/
-    cpan-overlay-server/
-  templates/
-  schemas/
-  tests/
-    fixtures/
-    interoperability/
+    cpan-overlay-core/       sync, runtime-neutral: manifest, merge, routing, CHECKSUMS
+    cpan-overlay-compute/    Fastly Compute adapter (wasm32-wasip1)
+    cpan-overlay-server/     native server (milestone 5, not yet created)
   examples/
-    fastly/
-    viceroy/
-    standalone/
+    viceroy/                 local manifest, fixture distributions, prepare.sh
   fastly.toml
   docs/
 ```
 
-These are provisional crate names, not commitments to publish every crate independently. UPT remains a separate repository. Review its existing code before deciding where shared CPAN libraries live; use one canonical implementation for shared semantics rather than introducing circular dependencies.
+Package names use the `cpan-overlay*` prefix; the repository keeps the `rust-` prefix used across `uperl`. Not every crate will be published independently. The core is synchronous: the Fastly SDK is synchronous, and a native server can wrap it (for example with `spawn_blocking`). UPT remains a separate repository. Review its existing code before deciding where shared CPAN libraries live; use one canonical implementation for shared semantics rather than introducing circular dependencies.
 
 ### 3.2 Deployment targets
 
@@ -121,7 +115,7 @@ Fetch the upstream `02packages.details.txt.gz`, decompress with bounded resource
 2. Determine active distribution entries and their exact package claims.
 3. Apply explicitly configured package removals/replacements/additions.
 4. Reject ambiguous claims by multiple active local entries; never rely on manifest ordering to resolve accidental conflicts.
-5. Sort deterministically by package name, regenerate accurate header fields and line count, and emit a valid gzip stream.
+5. Sort deterministically by package name, case-insensitively with a bytewise tie-break (PAUSE's order: verified over all 271,346 rows of the live index), regenerate accurate header fields and line count, and emit a valid gzip stream in PAUSE's `%-30s %8s  %s` row layout (an unmodified index round-trips byte-for-byte).
 6. Publish/cache the index as one coherent generation with its routing and provenance metadata.
 
 A distribution can provide multiple packages. Overriding only its principal package may cause other packages to resolve to the original archive, or introduce mixed versions in a dependency graph. Default to replacing the complete package set of a patched release after comparison with its upstream package set. Explicitly represent removed or intentionally unindexed packages, and fail validation on unexplained omissions. Never remove packages belonging to unrelated upstream distributions merely because of a similar name. New personal distributions that collide with upstream package names must be explicitly marked as overrides rather than silently shadowing them.
@@ -139,9 +133,9 @@ Default patches to `force`. A newer release is not evidence that the bug is fixe
 
 ### 5.2 Artifact identity and versions
 
-Use a separate, configurable overlay author namespace, e.g. `L/LO/LOCAL/Foo-Bar-1.24.1.tar.gz`. Reserve it locally and detect collisions with the upstream author/path namespace. A real overlay owner may select a different, unique namespace. Keep the original distribution accessible through its original path.
+Use a separate, configurable overlay author namespace, defaulting to `L/LO/LOCAL`, which is reserved for local use, e.g. `L/LO/LOCAL/Foo-Bar-1.2401.tar.gz`. Reserve it locally and detect collisions with the upstream author/path namespace. A real overlay owner may select a different, unique namespace. Keep the original distribution accessible through its original path.
 
-Artifact paths are immutable: never publish different bytes at a previously published path. Use content digests and unique release paths; preserve historical artifacts long enough for lockfiles and rollback. Package versions in the index must reflect the actual distribution contents. Merely increasing a tarball filename does not increase `$VERSION`. Choose patched versions with awareness of CPAN version semantics, dependency constraints, and clients that skip installation when a matching version is already installed. Some patches may intentionally retain package versions; document that a reinstall may then be needed. Do not imply that every client can infer patch identity from version alone.
+Artifact paths are immutable: never publish different bytes at a previously published path. Use content digests and unique release paths; preserve historical artifacts long enough for lockfiles and rollback. Package versions in the index must reflect the actual distribution contents. Merely increasing a tarball filename does not increase `$VERSION`. Beware dotted suffixes on decimal versions: under `version.pm` rules `1.24` means `v1.240.0`, so `1.24.1` sorts *below* `1.24` and clients with 1.24 installed will treat the patch as a downgrade. Prefer `1.2401` (or `1.240.1` if the distribution already uses dotted versions). The merge reports any replacement that does not sort above the version it replaces. Choose patched versions with awareness of CPAN version semantics, dependency constraints, and clients that skip installation when a matching version is already installed. Some patches may intentionally retain package versions; document that a reinstall may then be needed. Do not imply that every client can infer patch identity from version alone.
 
 Generate compatible `CHECKSUMS` metadata for overlay paths, including SHA-256 where applicable. Determine the precise conventional format and client expectations via fixtures. Do not copy upstream signatures onto modified archives or claim PAUSE signatures for local artifacts. Preserve upstream licensing, notices and source provenance when redistributing patches.
 
@@ -168,11 +162,12 @@ Configuration is versioned, validated and portable. The following illustrative J
     {
       "name": "Foo-Bar",
       "kind": "patched",
-      "version": "1.24.1",
-      "path": "L/LO/LOCAL/Foo-Bar-1.24.1.tar.gz",
+      "version": "1.2401",
+      "path": "L/LO/LOCAL/Foo-Bar-1.2401.tar.gz",
       "backend": "github",
-      "object": "example/foo/releases/download/v1.24.1/Foo-Bar-1.24.1.tar.gz",
-      "provides": {"Foo::Bar": "1.24.1", "Foo::Bar::Util": "1.24.1"},
+      "object": "example/foo/releases/download/v1.2401/Foo-Bar-1.2401.tar.gz",
+      "provides": {"Foo::Bar": "1.2401", "Foo::Bar::Util": "1.2401"},
+      "removes": ["Foo::Bar::Legacy"],
       "policy": "force",
       "upstream": {"path": "A/AU/AUTHOR/Foo-Bar-1.24.tar.gz", "version": "1.24"},
       "patches": [
@@ -194,7 +189,7 @@ Configuration is versioned, validated and portable. The following illustrative J
 }
 ```
 
-Production records also carry artifact SHA-256, byte size, timestamps, licensing information where known, and upstream digest when available. Example URLs and revisions are fictional placeholders.
+`removes` lists upstream packages of the replaced distribution that the patched release deliberately drops; any other upstream package not in `provides` fails the merge. Records carry the artifact SHA-256 (required), and optionally MD5, byte size and date (used in `CHECKSUMS`); production records should also carry timestamps, licensing information where known, and upstream digest when available. Example URLs and revisions are fictional placeholders.
 
 Fastly Config Store is the authoritative hosted configuration source. Do not assume the entire manifest fits into a single entry. Evaluate current entry, store and propagation limits. Use versioned immutable manifest shards or a manifest object in KV/HTTP referenced by an active Config Store generation pointer if necessary. Distinguish linked Fastly resources from logical backend names; provisioning/linking a new backend may require platform setup even when adding a distribution to an existing backend does not. Never store passwords, tokens or private keys in the public manifest.
 
@@ -235,7 +230,7 @@ Publish a versioned compatibility matrix distinguishing observed results from ex
 
 Cache upstream indexes using validators and configurable freshness. Cache the merged index by upstream snapshot identity plus configuration generation and format version. Recompute only on a change or cache miss, with request coalescing where available. Generate deterministic content and ETags. Use separate artifact caches keyed by immutable path/digest and appropriate authorization scope. Honor conditional requests and avoid unnecessary recompression.
 
-Fastly Compute has finite CPU, memory, execution and cache limits. Benchmark real full CPAN indexes (compressed and decompressed), parsing, merging, sorting and gzip generation, with realistic overlay sizes. Measure cold/warm requests and concurrent misses. If on-demand generation exceeds limits, support precomputed merged indexes generated by Rust tooling and published to a configured artifact backend; arrange periodic upstream refresh via deployment automation or a supported scheduler. No persistent Compute instance or assumed background execution is required. This fallback is an explicit design option, not a claim about current platform limits.
+Fastly Compute has finite CPU, memory, execution and cache limits. The first measurement (November 2026 index, 271k rows, 2.6 MB gzip / 23.6 MB text): a model that owns every row's strings ran out of memory in Viceroy. The core therefore parses rows as borrowed slices of the decompressed text and streams output into the encoder, which takes about 370 ms natively (decode+parse ~70 ms, merge ~20 ms, gzip ~275 ms) and about 1 s cold in Viceroy including the upstream fetch, with warm requests served from cache in milliseconds. Still to measure: on Fastly itself, concurrency, cold POPs. Benchmark real full CPAN indexes (compressed and decompressed), parsing, merging, sorting and gzip generation, with realistic overlay sizes. Measure cold/warm requests and concurrent misses. If on-demand generation exceeds limits, support precomputed merged indexes generated by Rust tooling and published to a configured artifact backend; arrange periodic upstream refresh via deployment automation or a supported scheduler. No persistent Compute instance or assumed background execution is required. This fallback is an explicit design option, not a claim about current platform limits.
 
 Publish artifacts and checksums before activating a new manifest. Retain old paths during propagation so an older index remains installable. Activate versioned metadata using a single pointer where practical, purge or version cache keys, and allow rollback by selecting an earlier generation. Fastly propagation may be eventually consistent across locations; do not promise global atomicity. Validate configuration and preserve the last known good index where supported. Surface errors and stale state in status/API; never silently fall back to unpatched CPAN when configured overrides cannot be loaded. If no valid snapshot is available, return a useful 503 instead of an incorrect index. A failing custom artifact backend must not silently substitute original upstream bytes.
 
@@ -282,14 +277,14 @@ Illustrative response:
   "kind": "patched",
   "active": true,
   "policy": "force",
-  "version": "1.24.1",
-  "path": "L/LO/LOCAL/Foo-Bar-1.24.1.tar.gz",
+  "version": "1.2401",
+  "path": "L/LO/LOCAL/Foo-Bar-1.2401.tar.gz",
   "upstream": {
     "version": "1.24",
     "path": "A/AU/AUTHOR/Foo-Bar-1.24.tar.gz",
     "newer_release_available": false
   },
-  "provides": {"Foo::Bar": "1.24.1", "Foo::Bar::Util": "1.24.1"},
+  "provides": {"Foo::Bar": "1.2401", "Foo::Bar::Util": "1.2401"},
   "patches": [
     {
       "summary": "Fix Perl 5.42 compatibility",
@@ -321,16 +316,16 @@ The homepage should make it immediately apparent that this is an overlay, not pu
 
 ### 11.1 Client configuration instructions
 
-Generate instructions from a configured canonical `site.public_url`, rather than blindly trusting incoming Host headers. Include a simple one-off install example and persistent setup where supported. Show how to switch back to the previous configuration. Explain that some clients consult external metadata services and may bypass the overlay unless configured to use only the mirror. Do not promise identical semantics across every client or silently modify a user's environment.
+Generate instructions from a configured canonical `site.public_url`, rather than blindly trusting incoming Host headers. Include a simple one-off install example and persistent setup where supported. Show how to switch back to the previous configuration. Explain that some clients consult external metadata services and may bypass the overlay unless configured to use only the mirror. Observed: cpanm's `--from` (often set in `PERL_CPANM_OPT`) overrides `--mirror`, so instructions should use `--from <overlay>` or warn about existing `PERL_CPANM_OPT`. Do not promise identical semantics across every client or silently modify a user's environment.
 
 Examples for a public deployment at `https://cpan.example.com`:
 
 ```sh
-# cpanm: one-off installation
-cpanm --mirror https://cpan.example.com --mirror-only Foo::Bar
+# cpanm: one-off installation (--from is equivalent to --mirror ... --mirror-only)
+cpanm --from https://cpan.example.com Foo::Bar
 
 # cpanm: persistent shell configuration (preserve other desired options)
-export PERL_CPANM_OPT="--mirror https://cpan.example.com --mirror-only"
+export PERL_CPANM_OPT="--from https://cpan.example.com"
 ```
 
 For the CPAN.pm interactive shell, candidate commands are:
@@ -360,7 +355,7 @@ Integrate administrative commands into UPT; do not create another standalone adm
 ```sh
 upt overlay list
 upt overlay status
-upt overlay add Foo-Bar-1.24.1.tar.gz
+upt overlay add Foo-Bar-1.2401.tar.gz
 upt overlay patch Foo-Bar
 upt overlay remove Foo-Bar
 upt overlay outdated
@@ -412,9 +407,9 @@ These milestones are proposed sequencing, not release commitments. Design runtim
 
 | Question | Proposed resolution / exit criterion |
 |---|---|
-| Compute index generation limits | Benchmark current SDK/platform with actual CPAN indexes; adopt precompute fallback if needed |
+| Compute index generation limits | Viceroy: fits after the zero-copy rewrite (section 8). Still to do: benchmark on Fastly itself; adopt precompute fallback if needed |
 | Config Store and KV limits, propagation | Verify current documented limits and test manifest activation; select storage and shard strategy |
-| UPT existing architecture | Inspect repository and identify reusable Rust components and CLI conventions |
+| UPT existing architecture | Partly done. `cpan-packagedetails` was evaluated, but its owned-row model exceeds Compute memory and its `sort_by_package` uses byte order, not PAUSE's; a borrowed/streaming API there would let the core reuse it. Version comparison in `upt` is private; candidate for a shared crate |
 | CPAN redirects | Run section 7 matrix and publish observed compatibility results |
 | CPAN checksum/index details | Confirm formats and required ancillary endpoints with real clients |
 | Patched version semantics | Test package versions, developer versions, same-version reinstalls and lockfiles |
@@ -423,7 +418,7 @@ These milestones are proposed sequencing, not release commitments. Design runtim
 | Cache consistency | Test last-known-good behavior, activation propagation and old artifact availability |
 | Chained overlay precedence | Formalize inherited API provenance and loop detection |
 | Authentication | Verify CPAN client credential mechanisms; select supported modes and documentation |
-| Naming and distribution | Confirm crates.io availability before publishing; decide licensing and release conventions |
+| Naming and distribution | MIT; repository `uperl/rust-cpan-overlay`, crates `cpan-overlay-*`. Releases: custom workflow builds the Compute package on a workspace version bump. Confirm crates.io availability before publishing |
 
 ## 16. Prior art and references
 
@@ -452,6 +447,6 @@ These links are research starting points, not a completed source audit. Verify v
 
 ## 17. Project identity and licensing
 
-Use `CPAN Overlay` as the human-readable name and `cpan-overlay` as the repository/project identifier, with `uperl/cpan-overlay` proposed as the canonical repository. Preliminary name searches did not identify an exact collision; this is not a comprehensive trademark or registry clearance. Confirm registry availability before publishing crates. Select the project's open-source license consistently with the `uperl` ecosystem; no specific license is assumed by this draft. Keep the public project independent of personal and employer-specific configurations, credentials and distributions.
+Use `CPAN Overlay` as the human-readable name, `cpan-overlay` as the project identifier and package-name prefix, and `uperl/rust-cpan-overlay` as the canonical repository. Preliminary name searches did not identify an exact collision; this is not a comprehensive trademark or registry clearance. Confirm registry availability before publishing crates. The project is MIT licensed, consistent with the `uperl` ecosystem. Keep the public project independent of personal and employer-specific configurations, credentials and distributions.
 
 The defining principle is **CPAN with explicit amendments, deployable anywhere, written entirely in Rust**. Fastly Compute is the flagship target, Viceroy provides local execution and testing, and the native server enables permanent LAN installations. UPT is the unified administration and consumption tool, while conventional CPAN clients remain fully welcome.
